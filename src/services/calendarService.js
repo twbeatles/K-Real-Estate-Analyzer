@@ -2,6 +2,8 @@
  * 경제 캘린더 서비스 - 실제 경제 지표 발표 일정
  */
 
+import { logger } from '../utils/logger';
+
 // 한국 경제 지표 발표 일정 (정기 발표)
 const RECURRING_EVENTS = [
     // 통계청
@@ -200,6 +202,7 @@ export const getUpcomingEvents = (days = 14) => {
 
 /**
  * 외부 경제 캘린더 API 연동 (Investing.com, TradingEconomics 등)
+ * @returns {Object} { events: [], error: null } 또는 { events: [], error: string }
  */
 export const fetchExternalCalendar = async () => {
     try {
@@ -207,16 +210,48 @@ export const fetchExternalCalendar = async () => {
         // 무료 대안: API 없이 정기 일정 사용
 
         // 한국은행 공개 일정 확인 시도
-        const response = await fetch('/api/calendar/bok');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5초 타임아웃
+
+        const response = await fetch('/api/calendar/bok', {
+            signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
         if (response.ok) {
             const data = await response.json();
-            return data.events || [];
+            return {
+                events: data.events || [],
+                error: null,
+                source: 'api',
+            };
         }
-    } catch (error) {
-        console.error('외부 캘린더 로드 실패:', error);
-    }
 
-    return [];
+        // HTTP 오류 응답
+        logger.warn(`외부 캘린더 API 응답 오류: ${response.status}`);
+        return {
+            events: [],
+            error: `서버 응답 오류 (${response.status})`,
+            source: 'fallback',
+        };
+    } catch (error) {
+        // 타임아웃 또는 네트워크 오류
+        if (error.name === 'AbortError') {
+            logger.warn('외부 캘린더 로드 타임아웃');
+            return {
+                events: [],
+                error: '외부 캘린더 로드 시간 초과. 기본 일정을 사용합니다.',
+                source: 'fallback',
+            };
+        }
+
+        logger.error('외부 캘린더 로드 실패:', error);
+        return {
+            events: [],
+            error: '외부 캘린더 연결 실패. 기본 일정을 사용합니다.',
+            source: 'fallback',
+        };
+    }
 };
 
 /**

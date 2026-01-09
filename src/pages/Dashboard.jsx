@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 import {
     LineChart, Line, AreaChart, Area, BarChart, Bar,
     XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -20,7 +20,7 @@ import { formatNumber, formatPercent } from '../utils/formatters';
 /**
  * 대시보드 페이지
  */
-const Dashboard = () => {
+const Dashboard = memo(() => {
     // 데이터 생성
     const historicalData = useMemo(() => generateHistoricalData(), []);
     const interestRates = useMemo(() => generateInterestRateData(), []);
@@ -298,6 +298,8 @@ const Dashboard = () => {
             </div>
         </div>
     );
-};
+});
+
+Dashboard.displayName = 'Dashboard';
 
 export default Dashboard;

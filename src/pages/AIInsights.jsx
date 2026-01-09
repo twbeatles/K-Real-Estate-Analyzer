@@ -7,6 +7,7 @@ import {
 import { generateMarketAnalysis, generateSimpleAnalysis, validateOpenAIKey } from '../services/aiService';
 import { fetchRealEstateNews } from '../services/newsService';
 import { generateHistoricalData, generateInterestRateData } from '../data';
+import { logger } from '../utils/logger';
 
 /**
  * AI 인사이트 페이지 - 실시간 AI 분석
@@ -68,7 +69,7 @@ const AIInsights = () => {
 
             setInsight(result);
         } catch (err) {
-            console.error('분석 생성 실패:', err);
+            logger.error('분석 생성 실패:', err);
             setError(err.message);
 
             // 폴백: 간단 분석

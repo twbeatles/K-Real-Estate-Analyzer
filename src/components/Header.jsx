@@ -1,5 +1,7 @@
 import { memo, useState, useCallback } from 'react';
-import { Sun, Moon, Bell, Search, Menu, X, Sparkles, ChevronRight } from 'lucide-react';
+import { Sun, Moon, Bell, Search, Menu, X, Sparkles, ChevronRight, WifiOff, Wifi } from 'lucide-react';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import logger from '../utils/logger';
 
 /**
  * 헤더 컴포넌트 - Premium Edition (Enhanced)
@@ -15,6 +17,7 @@ const Header = memo(({
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchValue, setSearchValue] = useState('');
     const [notificationCount] = useState(3); // Example notification count
+    const { isOnline, wasOffline } = useNetworkStatus();
 
     const handleSearchToggle = useCallback(() => {
         setSearchOpen(prev => !prev);
@@ -30,7 +33,7 @@ const Header = memo(({
     const handleSearchSubmit = useCallback((e) => {
         e.preventDefault();
         if (searchValue.trim()) {
-            console.log('Searching for:', searchValue);
+            logger.debug('Searching for:', searchValue);
             // Implement search functionality
         }
     }, [searchValue]);
@@ -173,6 +176,49 @@ const Header = memo(({
                     </div>
                 </button>
 
+                {/* Network Status Indicator */}
+                {!isOnline && (
+                    <div
+                        className="badge"
+                        style={{
+                            padding: '8px 12px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            background: 'var(--color-danger)',
+                            color: 'white',
+                            animation: 'pulse 2s ease-in-out infinite',
+                        }}
+                        role="status"
+                        aria-live="polite"
+                    >
+                        <WifiOff size={14} />
+                        오프라인
+                    </div>
+                )}
+                {wasOffline && isOnline && (
+                    <div
+                        className="badge"
+                        style={{
+                            padding: '8px 12px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            background: 'var(--color-success)',
+                            color: 'white',
+                        }}
+                        role="status"
+                        aria-live="polite"
+                    >
+                        <Wifi size={14} />
+                        연결됨
+                    </div>
+                )}
+
                 {/* Data Source Indicator */}
                 <div
                     className="badge hide-mobile"
@@ -188,6 +234,7 @@ const Header = memo(({
                         boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
                         animation: 'buttonGlow 3s ease-in-out infinite',
                     }}
+                    role="status"
                 >
                     <Sparkles size={14} />
                     시뮬레이션 데이터

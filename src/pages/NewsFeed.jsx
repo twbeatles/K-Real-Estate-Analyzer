@@ -4,6 +4,7 @@ import {
     RefreshCw, BookOpen, AlertCircle, Wifi, WifiOff, Link
 } from 'lucide-react';
 import { fetchRealEstateNews } from '../services/newsService';
+import { logger } from '../utils/logger';
 
 /**
  * 부동산 뉴스 피드 페이지 - 실시간 뉴스
@@ -71,7 +72,7 @@ const NewsFeed = () => {
                 throw new Error('뉴스를 가져올 수 없습니다.');
             }
         } catch (err) {
-            console.error('뉴스 로드 실패:', err);
+            logger.error('뉴스 로드 실패:', err);
             setError(err.message);
             setIsOnline(false);
 

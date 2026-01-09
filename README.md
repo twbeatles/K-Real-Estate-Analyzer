@@ -60,6 +60,18 @@ npm run build
 
 → http://localhost:3000
 
+### 📦 GitHub Pages 배포
+
+```bash
+# 1. 빌드 실행
+npm run build
+
+# 2. dist 폴더를 gh-pages 브랜치로 배포
+npx gh-pages -d dist
+```
+
+> 💡 `vite.config.js`에 `base: './'`가 설정되어 있어 별도 설정 없이 배포 가능
+
 ---
 
 ## 📁 프로젝트 구조
@@ -88,7 +100,7 @@ src/
 
 ---
 
-## ⚡ 성능 및 디버깅 최적화 (v1.1)
+## ⚡ 성능 및 디버깅 최적화 (v1.2)
 
 ### 1. 렌더링 최적화
 - **React.memo 적용**: `Sidebar`, `Header`, `AIChatbot` 등 전역 컴포넌트 불필요한 리렌더링 방지
@@ -99,10 +111,10 @@ src/
 - **데이터 캐싱**: `Map` 기반 메모이제이션으로 중복 데이터 생성 방지
 - **Intl 인스턴스 캐싱**: `NumberFormat`, `DateTimeFormat` 재사용으로 포매팅 성능 향상
 
-### 3. 디버깅 및 안정성
-- **중앙화된 로깅 시스템**: `logger.js` 도입으로 개발/운영 환경 로그 분리
-- **조건부 콘솔 출력**: 프로덕션 빌드 시 불필요한 로그 자동 제거 (에러만 출력)
-- **에러 핸들링 강화**: API 호출 및 데이터 파싱 안정성 확보
+### 3. 통합 로깅 시스템 (v1.2 NEW)
+- **중앙화된 로깅**: 모든 `console.error`/`warn`을 `logger` 유틸리티로 통합
+- **환경별 로그 분리**: 개발 환경에서만 디버그 로그 출력, 프로덕션에서는 에러만 출력
+- **서비스/페이지 레이어 일관성**: `newsService`, `aiService`, `calendarService` 등 전체 통합
 
 ---
 

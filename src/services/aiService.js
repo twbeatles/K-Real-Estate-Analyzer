@@ -2,8 +2,81 @@
  * AI 분석 서비스 - OpenAI API 연동
  */
 
+import { logger } from '../utils/logger';
+
 // OpenAI API 설정
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
+const API_TIMEOUT = 30000; // 30초 타임아웃
+
+// Rate Limiting 설정
+const RATE_LIMIT_CONFIG = {
+    maxRequests: 10,
+    windowMs: 60000, // 1분
+    storageKey: 'aiService_rateLimitRequests',
+};
+
+/**
+ * sessionStorage에서 Rate Limit 요청 기록 로드
+ */
+const loadRateLimitRequests = () => {
+    try {
+        const stored = sessionStorage.getItem(RATE_LIMIT_CONFIG.storageKey);
+        return stored ? JSON.parse(stored) : [];
+    } catch {
+        return [];
+    }
+};
+
+/**
+ * sessionStorage에 Rate Limit 요청 기록 저장
+ */
+const saveRateLimitRequests = (requests) => {
+    try {
+        sessionStorage.setItem(RATE_LIMIT_CONFIG.storageKey, JSON.stringify(requests));
+    } catch (e) {
+        logger.warn('Rate limit 저장 실패:', e);
+    }
+};
+
+/**
+ * Rate Limiting 체크 (sessionStorage로 새로고침 후에도 유지)
+ */
+const checkRateLimit = () => {
+    const now = Date.now();
+
+    // sessionStorage에서 요청 기록 로드
+    let requests = loadRateLimitRequests();
+
+    // 윈도우 시간 외의 요청 제거
+    requests = requests.filter(time => now - time < RATE_LIMIT_CONFIG.windowMs);
+
+    if (requests.length >= RATE_LIMIT_CONFIG.maxRequests) {
+        const oldestRequest = requests[0];
+        const waitTime = Math.ceil((RATE_LIMIT_CONFIG.windowMs - (now - oldestRequest)) / 1000);
+        throw new Error(`요청 한도 초과. ${waitTime}초 후에 다시 시도해주세요.`);
+    }
+
+    requests.push(now);
+    saveRateLimitRequests(requests);
+};
+
+/**
+ * 타임아웃이 있는 fetch 래퍼
+ */
+const fetchWithTimeout = async (url, options, timeout = API_TIMEOUT) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal,
+        });
+        return response;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+};
 
 /**
  * AI 시장 분석 생성
@@ -12,6 +85,9 @@ export const generateMarketAnalysis = async (apiKey, marketData, topic = 'overal
     if (!apiKey) {
         throw new Error('OpenAI API 키가 필요합니다.');
     }
+
+    // Rate limit 체크
+    checkRateLimit();
 
     const prompts = {
         overall: `당신은 한국 부동산 시장 전문 애널리스트입니다. 다음 데이터를 바탕으로 현재 시장 상황을 분석해주세요.
@@ -39,7 +115,7 @@ export const generateMarketAnalysis = async (apiKey, marketData, topic = 'overal
     const prompt = prompts[topic] || prompts.overall;
 
     try {
-        const response = await fetch(OPENAI_API_URL, {
+        const response = await fetchWithTimeout(OPENAI_API_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -72,7 +148,10 @@ export const generateMarketAnalysis = async (apiKey, marketData, topic = 'overal
 
         return parseAIResponse(content, topic);
     } catch (error) {
-        console.error('AI 분석 생성 실패:', error);
+        if (error.name === 'AbortError') {
+            throw new Error('API 요청 시간이 초과되었습니다. 다시 시도해주세요.');
+        }
+        logger.error('AI 분석 생성 실패:', error);
         throw error;
     }
 };

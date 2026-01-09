@@ -1,33 +1,56 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, lazy, Suspense } from 'react';
 import { DataProvider } from './context/DataContext';
+import ErrorBoundary from './components/ErrorBoundary';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
-import Dashboard from './pages/Dashboard';
-import MarketAnalysis from './pages/MarketAnalysis';
-import MacroEconomics from './pages/MacroEconomics';
-import RegionalAnalysis from './pages/RegionalAnalysis';
-import InvestmentTools from './pages/InvestmentTools';
-import InvestmentSimulator from './pages/InvestmentSimulator';
-import TransportAnalysis from './pages/TransportAnalysis';
-import EconomicCalendar from './pages/EconomicCalendar';
-import TaxCalculator from './pages/TaxCalculator';
-import PropertySearch from './pages/PropertySearch';
-import CompareAnalysis from './pages/CompareAnalysis';
-import NewsFeed from './pages/NewsFeed';
-import Watchlist from './pages/Watchlist';
-import AIInsights from './pages/AIInsights';
-import DataExport from './pages/DataExport';
-import SettingsPage from './pages/SettingsPage';
-import CorrelationAnalyzer from './pages/CorrelationAnalyzer';
-import ScenarioSimulator from './pages/ScenarioSimulator';
-import CycleAnalysis from './pages/CycleAnalysis';
-import LeadingIndicators from './pages/LeadingIndicators';
-import PortfolioManager from './pages/PortfolioManager';
-import AlertSystem from './pages/AlertSystem';
-import MortgageSimulator from './pages/MortgageSimulator';
-import DataSync from './pages/DataSync';
 import AIChatbot from './components/AIChatbot';
 import { useTheme } from './hooks/useTheme';
+
+// Lazy loaded pages for code splitting
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const MarketAnalysis = lazy(() => import('./pages/MarketAnalysis'));
+const MacroEconomics = lazy(() => import('./pages/MacroEconomics'));
+const RegionalAnalysis = lazy(() => import('./pages/RegionalAnalysis'));
+const InvestmentTools = lazy(() => import('./pages/InvestmentTools'));
+const InvestmentSimulator = lazy(() => import('./pages/InvestmentSimulator'));
+const TransportAnalysis = lazy(() => import('./pages/TransportAnalysis'));
+const EconomicCalendar = lazy(() => import('./pages/EconomicCalendar'));
+const TaxCalculator = lazy(() => import('./pages/TaxCalculator'));
+const PropertySearch = lazy(() => import('./pages/PropertySearch'));
+const CompareAnalysis = lazy(() => import('./pages/CompareAnalysis'));
+const NewsFeed = lazy(() => import('./pages/NewsFeed'));
+const Watchlist = lazy(() => import('./pages/Watchlist'));
+const AIInsights = lazy(() => import('./pages/AIInsights'));
+const DataExport = lazy(() => import('./pages/DataExport'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const CorrelationAnalyzer = lazy(() => import('./pages/CorrelationAnalyzer'));
+const ScenarioSimulator = lazy(() => import('./pages/ScenarioSimulator'));
+const CycleAnalysis = lazy(() => import('./pages/CycleAnalysis'));
+const LeadingIndicators = lazy(() => import('./pages/LeadingIndicators'));
+const PortfolioManager = lazy(() => import('./pages/PortfolioManager'));
+const AlertSystem = lazy(() => import('./pages/AlertSystem'));
+const MortgageSimulator = lazy(() => import('./pages/MortgageSimulator'));
+const DataSync = lazy(() => import('./pages/DataSync'));
+
+// New pages
+const PopulationAnalysis = lazy(() => import('./pages/PopulationAnalysis'));
+const SalesMarket = lazy(() => import('./pages/SalesMarket'));
+const RentalMarket = lazy(() => import('./pages/RentalMarket'));
+const IncomeAnalysis = lazy(() => import('./pages/IncomeAnalysis'));
+const FinancialMarket = lazy(() => import('./pages/FinancialMarket'));
+const CommercialRealEstate = lazy(() => import('./pages/CommercialRealEstate'));
+const LoanComparison = lazy(() => import('./pages/LoanComparison'));
+const GlobalComparison = lazy(() => import('./pages/GlobalComparison'));
+
+/**
+ * 페이지 로딩 컴포넌트
+ */
+const PageLoader = () => (
+    <div className="page-loader">
+        <div className="spinner" />
+        <p>페이지 로딩 중...</p>
+    </div>
+);
 
 /**
  * 페이지 전환 래퍼 컴포넌트
@@ -67,6 +90,14 @@ function AppContent() {
         market: '시장 분석',
         macro: '거시경제 분석',
         regional: '지역별 분석',
+        population: '인구/세대 분석',
+        salesmarket: '분양 시장 분석',
+        rentalmarket: '전월세 시장 분석',
+        incomeanalysis: '소득/고용 분석',
+        financialmarket: '금융 시장 분석',
+        commercial: '상업용 부동산 분석',
+        loancompare: '대출 상품 비교',
+        globalcompare: '글로벌 비교 분석',
         correlation: '상관관계 분석',
         scenario: '시나리오 시뮬레이터',
         cycle: '사이클/리스크 분석',
@@ -89,37 +120,50 @@ function AppContent() {
         settings: '설정',
     }), []);
 
-    const renderPage = useCallback(() => {
-        const pageComponents = {
-            dashboard: Dashboard,
-            market: MarketAnalysis,
-            macro: MacroEconomics,
-            regional: RegionalAnalysis,
-            correlation: CorrelationAnalyzer,
-            scenario: ScenarioSimulator,
-            cycle: CycleAnalysis,
-            leading: LeadingIndicators,
-            investment: InvestmentTools,
-            simulator: InvestmentSimulator,
-            mortgage: MortgageSimulator,
-            portfolio: PortfolioManager,
-            transport: TransportAnalysis,
-            tax: TaxCalculator,
-            search: PropertySearch,
-            compare: CompareAnalysis,
-            calendar: EconomicCalendar,
-            news: NewsFeed,
-            watchlist: Watchlist,
-            alerts: AlertSystem,
-            insights: AIInsights,
-            export: DataExport,
-            datasync: DataSync,
-            settings: SettingsPage,
-        };
+    // 페이지 컴포넌트 맵 (useMemo로 캐싱)
+    const pageComponents = useMemo(() => ({
+        dashboard: Dashboard,
+        market: MarketAnalysis,
+        macro: MacroEconomics,
+        regional: RegionalAnalysis,
+        population: PopulationAnalysis,
+        salesmarket: SalesMarket,
+        rentalmarket: RentalMarket,
+        incomeanalysis: IncomeAnalysis,
+        financialmarket: FinancialMarket,
+        commercial: CommercialRealEstate,
+        loancompare: LoanComparison,
+        globalcompare: GlobalComparison,
+        correlation: CorrelationAnalyzer,
+        scenario: ScenarioSimulator,
+        cycle: CycleAnalysis,
+        leading: LeadingIndicators,
+        investment: InvestmentTools,
+        simulator: InvestmentSimulator,
+        mortgage: MortgageSimulator,
+        portfolio: PortfolioManager,
+        transport: TransportAnalysis,
+        tax: TaxCalculator,
+        search: PropertySearch,
+        compare: CompareAnalysis,
+        calendar: EconomicCalendar,
+        news: NewsFeed,
+        watchlist: Watchlist,
+        alerts: AlertSystem,
+        insights: AIInsights,
+        export: DataExport,
+        datasync: DataSync,
+        settings: SettingsPage,
+    }), []);
 
+    const renderPage = useCallback(() => {
         const PageComponent = pageComponents[currentPage] || Dashboard;
-        return <PageComponent />;
-    }, [currentPage]);
+        return (
+            <Suspense fallback={<PageLoader />}>
+                <PageComponent />
+            </Suspense>
+        );
+    }, [currentPage, pageComponents]);
 
     return (
         <div className="app-layout">
@@ -191,13 +235,16 @@ function AppContent() {
     );
 }
 
-// DataProvider로 앱 감싸기
+// DataProvider와 ErrorBoundary로 앱 감싸기
 function App() {
     return (
-        <DataProvider>
-            <AppContent />
-        </DataProvider>
+        <ErrorBoundary>
+            <DataProvider>
+                <AppContent />
+            </DataProvider>
+        </ErrorBoundary>
     );
 }
 
 export default App;
+

@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useState } from 'react';
 import {
     LayoutDashboard,
     TrendingUp,
@@ -13,6 +13,7 @@ import {
     Newspaper,
     ChevronLeft,
     ChevronRight,
+    ChevronDown,
     Sparkles,
     Settings,
     Train,
@@ -25,12 +26,28 @@ import {
     CreditCard,
     BellRing,
     RefreshCw,
+    Users,
+    Building2,
+    Home,
+    Wallet,
+    Landmark,
+    Store,
+    Globe2,
 } from 'lucide-react';
 
 /**
- * 사이드바 네비게이션 컴포넌트 - Premium Edition (Refactored)
+ * 사이드바 네비게이션 컴포넌트 - Premium Edition (Enhanced with Collapsible Groups)
  */
 const Sidebar = memo(({ currentPage, onPageChange, isCollapsed, onToggle }) => {
+    // 접이식 그룹 상태 관리
+    const [expandedGroups, setExpandedGroups] = useState({
+        '분석': true,
+        '시장 심층분석': true,
+        '고급 분석': false,
+        '도구': true,
+        '정보': false,
+    });
+
     const menuGroups = [
         {
             title: '분석',
@@ -39,6 +56,17 @@ const Sidebar = memo(({ currentPage, onPageChange, isCollapsed, onToggle }) => {
                 { id: 'market', label: '시장 분석', icon: TrendingUp },
                 { id: 'macro', label: '거시경제', icon: Globe },
                 { id: 'regional', label: '지역별 분석', icon: MapPin },
+                { id: 'population', label: '인구/세대 분석', icon: Users },
+            ]
+        },
+        {
+            title: '시장 심층분석',
+            items: [
+                { id: 'salesmarket', label: '분양 시장', icon: Building2 },
+                { id: 'rentalmarket', label: '전월세 시장', icon: Home },
+                { id: 'incomeanalysis', label: '소득/고용 분석', icon: Wallet },
+                { id: 'financialmarket', label: '금융 시장', icon: Landmark },
+                { id: 'commercial', label: '상업용 부동산', icon: Store },
             ]
         },
         {
@@ -56,10 +84,12 @@ const Sidebar = memo(({ currentPage, onPageChange, isCollapsed, onToggle }) => {
                 { id: 'investment', label: '투자 도구', icon: Calculator },
                 { id: 'simulator', label: '투자 시뮬레이터', icon: LineChart },
                 { id: 'mortgage', label: '대출 시뮬레이터', icon: CreditCard },
+                { id: 'loancompare', label: '대출 상품 비교', icon: CreditCard },
                 { id: 'portfolio', label: '포트폴리오', icon: Briefcase },
                 { id: 'tax', label: '세금 계산기', icon: Receipt },
                 { id: 'search', label: '실거래가 검색', icon: Search },
                 { id: 'compare', label: '비교 분석', icon: BarChart2 },
+                { id: 'globalcompare', label: '글로벌 비교', icon: Globe2 },
                 { id: 'transport', label: '교통호재 분석', icon: Train },
             ]
         },
@@ -79,8 +109,25 @@ const Sidebar = memo(({ currentPage, onPageChange, isCollapsed, onToggle }) => {
         onPageChange(id);
     }, [onPageChange]);
 
+    const toggleGroup = useCallback((groupTitle) => {
+        if (isCollapsed) return; // 접힌 상태에서는 그룹 토글 비활성화
+        setExpandedGroups(prev => ({
+            ...prev,
+            [groupTitle]: !prev[groupTitle]
+        }));
+    }, [isCollapsed]);
+
+    // 현재 페이지가 속한 그룹을 자동으로 펼침
+    const isGroupActive = useCallback((group) => {
+        return group.items.some(item => item.id === currentPage);
+    }, [currentPage]);
+
     return (
-        <aside className={`sidebar glass ${isCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}>
+        <aside
+            className={`sidebar glass ${isCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}
+            role="navigation"
+            aria-label="주 메뉴"
+        >
             {/* Logo */}
             <div className="sidebar-logo">
                 <div className="sidebar-logo-icon">
@@ -109,39 +156,61 @@ const Sidebar = memo(({ currentPage, onPageChange, isCollapsed, onToggle }) => {
 
             {/* Navigation */}
             <nav className="sidebar-nav">
-                {menuGroups.map((group, groupIndex) => (
-                    <div key={group.title} className="sidebar-group">
-                        {!isCollapsed && (
-                            <div className="sidebar-group-title">
-                                {group.title}
-                            </div>
-                        )}
+                {menuGroups.map((group) => {
+                    const isExpanded = expandedGroups[group.title] || isGroupActive(group);
 
-                        {group.items.map(item => {
-                            const isActive = currentPage === item.id;
-                            const Icon = item.icon;
-
-                            return (
+                    return (
+                        <div key={group.title} className="sidebar-group">
+                            {!isCollapsed ? (
                                 <button
-                                    key={item.id}
-                                    onClick={() => handleNavClick(item.id)}
-                                    title={isCollapsed ? item.label : undefined}
-                                    className={`sidebar-item ${isActive ? 'sidebar-item-active' : ''}`}
+                                    className={`sidebar-group-header ${!isExpanded ? 'collapsed' : ''}`}
+                                    onClick={() => toggleGroup(group.title)}
+                                    aria-expanded={isExpanded}
+                                    aria-controls={`group-${group.title}`}
                                 >
-                                    <Icon size={18} className="sidebar-item-icon" />
-                                    {!isCollapsed && (
-                                        <span className="sidebar-item-label">
-                                            {item.label}
-                                        </span>
-                                    )}
-                                    {isActive && !isCollapsed && (
-                                        <span className="sidebar-item-dot" />
-                                    )}
+                                    <span>{group.title}</span>
+                                    <ChevronDown
+                                        size={14}
+                                        className="chevron-icon"
+                                        style={{
+                                            transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
+                                        }}
+                                    />
                                 </button>
-                            );
-                        })}
-                    </div>
-                ))}
+                            ) : null}
+
+                            <div
+                                id={`group-${group.title}`}
+                                className={`sidebar-group-items ${isCollapsed || isExpanded ? 'expanded' : 'collapsed'}`}
+                            >
+                                {group.items.map(item => {
+                                    const isActive = currentPage === item.id;
+                                    const Icon = item.icon;
+
+                                    return (
+                                        <button
+                                            key={item.id}
+                                            onClick={() => handleNavClick(item.id)}
+                                            title={isCollapsed ? item.label : undefined}
+                                            className={`sidebar-item ${isActive ? 'sidebar-item-active' : ''}`}
+                                            aria-current={isActive ? 'page' : undefined}
+                                        >
+                                            <Icon size={18} className="sidebar-item-icon" />
+                                            {!isCollapsed && (
+                                                <span className="sidebar-item-label">
+                                                    {item.label}
+                                                </span>
+                                            )}
+                                            {isActive && !isCollapsed && (
+                                                <span className="sidebar-item-dot" />
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    );
+                })}
             </nav>
 
             {/* Bottom Actions */}

@@ -6,15 +6,18 @@ import {
 import {
     Briefcase, Plus, Trash2, Edit2, Save, X, Home, Building2,
     TrendingUp, TrendingDown, DollarSign, MapPin, Calendar,
-    PiggyBank, Target, RefreshCw, Download
+    PiggyBank, Target, RefreshCw, Download, Upload
 } from 'lucide-react';
 import { formatNumber, formatCurrency, formatPercent } from '../utils/formatters';
+import { logger } from '../utils/logger';
 
 // 포트폴리오 관리 페이지
 function PortfolioManager() {
     const [properties, setProperties] = useState([]);
     const [isAdding, setIsAdding] = useState(false);
     const [editingId, setEditingId] = useState(null);
+    const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null, name: '' });
+    const [isInitialized, setIsInitialized] = useState(false); // 초기 로드 완료 플래그
     const [formData, setFormData] = useState({
         name: '',
         address: '',
@@ -34,17 +37,23 @@ function PortfolioManager() {
             try {
                 setProperties(JSON.parse(saved));
             } catch (e) {
-                console.error('포트폴리오 데이터 로드 실패:', e);
+                logger.error('포트폴리오 데이터 로드 실패:', e);
             }
         }
+        setIsInitialized(true); // 초기 로드 완료 표시
     }, []);
 
-    // LocalStorage에 저장
+    // LocalStorage에 저장 (초기화 완료 후에만 저장 - race condition 방지)
     useEffect(() => {
+        if (!isInitialized) return; // 초기 로드 전에는 저장하지 않음
+
         if (properties.length > 0) {
             localStorage.setItem('portfolio_properties', JSON.stringify(properties));
+        } else {
+            // 빈 배열일 경우 localStorage에서 제거
+            localStorage.removeItem('portfolio_properties');
         }
-    }, [properties]);
+    }, [properties, isInitialized]);
 
     const handleInputChange = useCallback((field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }));
@@ -63,6 +72,22 @@ function PortfolioManager() {
     const handleSave = useCallback(() => {
         if (!formData.name || !formData.purchasePrice) {
             alert('물건명과 매입가는 필수입니다.');
+            return;
+        }
+
+        // 입력값 검증 강화
+        const purchasePrice = Number(formData.purchasePrice);
+        const currentPrice = Number(formData.currentPrice);
+        const loanAmount = Number(formData.loanAmount);
+        const area = Number(formData.area);
+
+        if (purchasePrice < 0 || currentPrice < 0 || loanAmount < 0 || area < 0) {
+            alert('금액과 면적은 음수일 수 없습니다.');
+            return;
+        }
+
+        if (purchasePrice > 10000000000) { // 100억 이상
+            alert('매입가가 너무 큽니다. 단위를 확인해주세요 (만원)');
             return;
         }
 
@@ -101,16 +126,76 @@ function PortfolioManager() {
         setIsAdding(true);
     }, []);
 
-    const handleDelete = useCallback((id) => {
-        if (confirm('정말 삭제하시겠습니까?')) {
-            setProperties(prev => {
-                const updated = prev.filter(p => p.id !== id);
-                if (updated.length === 0) {
-                    localStorage.removeItem('portfolio_properties');
-                }
-                return updated;
-            });
+    const handleDeleteClick = useCallback((property) => {
+        setDeleteConfirm({ isOpen: true, id: property.id, name: property.name });
+    }, []);
+
+    const handleDeleteConfirm = useCallback(() => {
+        setProperties(prev => {
+            const updated = prev.filter(p => p.id !== deleteConfirm.id);
+            return updated;
+        });
+        setDeleteConfirm({ isOpen: false, id: null, name: '' });
+    }, [deleteConfirm.id]);
+
+    const handleDeleteCancel = useCallback(() => {
+        setDeleteConfirm({ isOpen: false, id: null, name: '' });
+    }, []);
+
+    // 포트폴리오 데이터 내보내기
+    const handleExport = useCallback(() => {
+        if (properties.length === 0) {
+            alert('내보낼 자산이 없습니다.');
+            return;
         }
+        const data = {
+            version: '1.0',
+            exportDate: new Date().toISOString(),
+            properties,
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `portfolio-${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }, [properties]);
+
+    // 포트폴리오 데이터 가져오기
+    const handleImport = useCallback((event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = JSON.parse(e.target.result);
+                if (data.properties && Array.isArray(data.properties)) {
+                    const confirmImport = confirm(
+                        `${data.properties.length}개의 자산을 가져오시겠습니까?\n기존 데이터는 유지됩니다.`
+                    );
+                    if (confirmImport) {
+                        setProperties(prev => {
+                            // 중복 ID 방지를 위해 새 ID 부여
+                            const newProperties = data.properties.map(p => ({
+                                ...p,
+                                id: Date.now() + Math.random(),
+                                importedAt: new Date().toISOString(),
+                            }));
+                            return [...prev, ...newProperties];
+                        });
+                    }
+                } else {
+                    alert('올바른 포트폴리오 파일 형식이 아닙니다.');
+                }
+            } catch (err) {
+                logger.error('포트폴리오 가져오기 실패:', err);
+                alert('파일을 읽는 중 오류가 발생했습니다.');
+            }
+        };
+        reader.readAsText(file);
+        event.target.value = ''; // 같은 파일 다시 선택 가능하도록
     }, []);
 
     // 통계 계산
@@ -152,19 +237,26 @@ function PortfolioManager() {
         }));
     }, [properties]);
 
-    // 가치 변화 히스토리 (시뮬레이션)
+    // 가치 변화 히스토리 (시뮬레이션 - 안정적 패턴 사용)
     const valueHistory = useMemo(() => {
         if (properties.length === 0) return [];
         const months = [];
         const now = new Date();
+
+        // 시드 기반 패턴으로 일관성 있는 데이터 생성
+        const seed = properties.reduce((acc, p) => acc + (p.purchasePrice || 0), 0);
+        const patterns = [0.98, 1.01, 0.99, 1.02, 1.00, 1.01, 0.99, 1.03, 1.01, 1.02, 1.00, 1.01];
+
+        let cumulativeFactor = 1;
         for (let i = 11; i >= 0; i--) {
             const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
             const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-            const factor = 1 + (Math.random() - 0.5) * 0.02 * (11 - i);
+            const patternIdx = (11 - i + Math.floor(seed / 10000)) % patterns.length;
+            cumulativeFactor *= patterns[patternIdx];
             months.push({
                 month,
-                value: Math.round(stats.totalCurrent * factor),
-                equity: Math.round(stats.totalEquity * factor)
+                value: Math.round(stats.totalCurrent * cumulativeFactor),
+                equity: Math.round(stats.totalEquity * cumulativeFactor)
             });
         }
         return months;
@@ -188,14 +280,31 @@ function PortfolioManager() {
                     </h1>
                     <p className="page-subtitle">보유 부동산 자산을 관리하고 수익률을 추적하세요</p>
                 </div>
-                <button
-                    className="btn btn-primary"
-                    onClick={() => setIsAdding(true)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-                >
-                    <Plus size={18} />
-                    자산 추가
-                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                        className="btn btn-secondary"
+                        onClick={handleExport}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                        disabled={properties.length === 0}
+                        title="포트폴리오 내보내기"
+                    >
+                        <Download size={16} />
+                        내보내기
+                    </button>
+                    <label className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }} title="포트폴리오 가져오기">
+                        <Upload size={16} />
+                        가져오기
+                        <input type="file" accept=".json" onChange={handleImport} style={{ display: 'none' }} />
+                    </label>
+                    <button
+                        className="btn btn-primary"
+                        onClick={() => setIsAdding(true)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                    >
+                        <Plus size={18} />
+                        자산 추가
+                    </button>
+                </div>
             </div>
 
             {/* 자산 추가/수정 모달 */}
@@ -361,6 +470,17 @@ function PortfolioManager() {
                 <div className="glass-card" style={{ padding: 28 }}>
                     <h3 style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10, fontSize: '1.1rem' }}>
                         <TrendingUp size={22} /> 자산 가치 추이
+                        <span style={{
+                            fontSize: '0.7rem',
+                            padding: '2px 8px',
+                            borderRadius: 12,
+                            background: 'var(--color-warning-light)',
+                            color: 'var(--color-warning)',
+                            fontWeight: 500,
+                            marginLeft: 'auto',
+                        }}>
+                            예상 추이 (시뮬레이션)
+                        </span>
                     </h3>
                     <ResponsiveContainer width="100%" height={250}>
                         <AreaChart data={valueHistory}>
@@ -486,7 +606,7 @@ function PortfolioManager() {
                                                     <button className="btn-icon" onClick={() => handleEdit(prop)} title="수정">
                                                         <Edit2 size={16} />
                                                     </button>
-                                                    <button className="btn-icon" onClick={() => handleDelete(prop.id)} title="삭제" style={{ color: 'var(--color-danger)' }}>
+                                                    <button className="btn-icon" onClick={() => handleDeleteClick(prop)} title="삭제" style={{ color: 'var(--color-danger)' }} aria-label={`${prop.name} 삭제`}>
                                                         <Trash2 size={16} />
                                                     </button>
                                                 </div>
@@ -498,15 +618,60 @@ function PortfolioManager() {
                         </table>
                     </div>
                 ) : (
-                    <div style={{ textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>
-                        <Briefcase size={48} style={{ marginBottom: 16, opacity: 0.5 }} />
-                        <p>아직 등록된 자산이 없습니다.</p>
-                        <button className="btn btn-primary" onClick={() => setIsAdding(true)} style={{ marginTop: 16 }}>
-                            <Plus size={16} /> 첫 자산 추가하기
+                    <div className="empty-state-enhanced">
+                        <div className="empty-icon">
+                            <Briefcase size={36} />
+                        </div>
+                        <h3>아직 등록된 자산이 없습니다</h3>
+                        <p>
+                            부동산 자산을 추가하여 포트폴리오를 관리하고
+                            수익률을 실시간으로 추적해보세요.
+                        </p>
+                        <button
+                            className="btn btn-primary btn-lg"
+                            onClick={() => setIsAdding(true)}
+                        >
+                            <Plus size={20} />
+                            첫 번째 자산 추가하기
                         </button>
                     </div>
                 )}
             </div>
+
+            {/* 삭제 확인 모달 */}
+            {deleteConfirm.isOpen && (
+                <div className="modal-overlay" onClick={handleDeleteCancel}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 400, textAlign: 'center' }}>
+                        <div style={{ padding: '24px 24px 0' }}>
+                            <div style={{
+                                width: 60,
+                                height: 60,
+                                borderRadius: '50%',
+                                background: 'var(--color-danger-light)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                margin: '0 auto 16px',
+                            }}>
+                                <Trash2 size={28} style={{ color: 'var(--color-danger)' }} />
+                            </div>
+                            <h3 style={{ marginBottom: 8 }}>자산 삭제</h3>
+                            <p style={{ color: 'var(--color-text-secondary)', marginBottom: 24 }}>
+                                <strong>"{deleteConfirm.name}"</strong>을(를) 정말 삭제하시겠습니까?<br />
+                                이 작업은 취소할 수 없습니다.
+                            </p>
+                        </div>
+                        <div style={{ display: 'flex', gap: 12, padding: '0 24px 24px', justifyContent: 'center' }}>
+                            <button className="btn btn-secondary" onClick={handleDeleteCancel}>
+                                취소
+                            </button>
+                            <button className="btn" onClick={handleDeleteConfirm} style={{ background: 'var(--color-danger)', color: 'white' }}>
+                                삭제
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -1,6 +1,8 @@
-import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as simulationData from '../data';
 import * as apiService from '../services/api';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { checkAlerts } from '../utils/alertManager';
 import logger from '../utils/logger';
 
 /**
@@ -46,10 +48,30 @@ export const DataProvider = ({ children }) => {
     const [error, setError] = useState(null);
     const [lastUpdated, setLastUpdated] = useState(null);
 
+    // 모드 변경 알림 상태 (오프라인/온라인 전환 시 사용자 알림)
+    const [modeChangeNotification, setModeChangeNotification] = useState(null);
+    const previousModeRef = useRef(settings.dataMode);
+
     // 설정 저장
     useEffect(() => {
         localStorage.setItem('appSettings', JSON.stringify(settings));
     }, [settings]);
+
+    // 네트워크 상태 감지
+    const { isOnline: isNetworkOnline, wasOffline } = useNetworkStatus();
+
+    // 네트워크 복구 시 자동 데이터 새로고침
+    useEffect(() => {
+        if (wasOffline && isNetworkOnline && settings.dataMode === 'online') {
+            setModeChangeNotification({
+                message: '네트워크가 복구되었습니다. 데이터를 새로고침합니다.',
+                type: 'success',
+            });
+            loadData(true);
+            const timeoutId = setTimeout(() => setModeChangeNotification(null), 3000);
+            return () => clearTimeout(timeoutId);
+        }
+    }, [wasOffline, isNetworkOnline, settings.dataMode, loadData]);
 
     // 데이터 모드에 따른 데이터 로드
     const loadData = useCallback(async (forceRefresh = false) => {
@@ -82,7 +104,7 @@ export const DataProvider = ({ children }) => {
                 ]);
 
                 // 결과 처리 (실패 시 시뮬레이션 데이터 폴백)
-                setData({
+                const newData = {
                     historical: historical.status === 'fulfilled' && historical.value
                         ? historical.value
                         : simulationData.generateHistoricalData(),
@@ -98,8 +120,39 @@ export const DataProvider = ({ children }) => {
                         : simulationData.generateRegionalData(),
                     transactions: simulationData.generateTransactionData(),
                     economicEvents: simulationData.generateEconomicEvents(),
-                });
+                };
 
+                // 알림 체크
+                try {
+                    const savedAlerts = localStorage.getItem('alert_settings');
+                    if (savedAlerts) {
+                        const alerts = JSON.parse(savedAlerts);
+                        const newNotifications = checkAlerts(newData, alerts);
+
+                        if (newNotifications.length > 0) {
+                            const savedNotifs = localStorage.getItem('alert_notifications');
+                            const existingNotifs = savedNotifs ? JSON.parse(savedNotifs) : [];
+                            const updatedNotifs = [...newNotifications, ...existingNotifs].slice(0, 50);
+                            localStorage.setItem('alert_notifications', JSON.stringify(updatedNotifs));
+
+                            if (Notification.permission === 'granted') {
+                                newNotifications.forEach(n => new Notification(n.title, { body: n.message }));
+                            }
+
+                            setModeChangeNotification({
+                                type: 'info',
+                                message: `새로운 알림이 ${newNotifications.length}건 있습니다.`
+                            });
+
+                            // 3초 후 알림 제거
+                            setTimeout(() => setModeChangeNotification(null), 3000);
+                        }
+                    }
+                } catch (e) {
+                    logger.error('Failed to check alerts:', e);
+                }
+
+                setData(newData);
                 setLastUpdated(new Date());
 
                 // 일부 API 실패 시 경고
@@ -107,7 +160,7 @@ export const DataProvider = ({ children }) => {
                     r => r.status === 'rejected'
                 );
                 if (failures.length > 0) {
-                    setError(`일부 API 호출 실패 (${failures.length}개). 시뮬레이션 데이터로 대체됨.`);
+                    setError('일부 데이터를 불러오지 못했습니다. 시뮬레이션 데이터로 대체합니다.');
                 }
             }
         } catch (err) {
@@ -127,12 +180,37 @@ export const DataProvider = ({ children }) => {
         } finally {
             setIsLoading(false);
         }
-    }, [settings]);
+    }, [settings.dataMode, settings.apiKeys]);
 
-    // 초기 데이터 로드
+
+    // 초기 데이터 로드 및 모드 변경 알림
     useEffect(() => {
+        let notificationTimeoutId = null;
+
+        // 모드 변경 감지 및 알림
+        if (previousModeRef.current !== settings.dataMode) {
+            const modeLabels = {
+                offline: '오프라인 모드 (시뮬레이션 데이터)',
+                online: '온라인 모드 (API 데이터)',
+            };
+            setModeChangeNotification({
+                message: `${modeLabels[settings.dataMode]}로 전환되었습니다.`,
+                type: settings.dataMode === 'online' ? 'info' : 'warning',
+            });
+            // 3초 후 알림 숨기기
+            notificationTimeoutId = setTimeout(() => setModeChangeNotification(null), 3000);
+            previousModeRef.current = settings.dataMode;
+        }
         loadData();
-    }, [settings.dataMode]);
+
+        // 클린업: 컴포넌트 언마운트 시 타임아웃 정리
+        return () => {
+            if (notificationTimeoutId) {
+                clearTimeout(notificationTimeoutId);
+            }
+        };
+    }, [settings.dataMode, loadData]);
+
 
     // 자동 새로고침
     useEffect(() => {
@@ -186,6 +264,12 @@ export const DataProvider = ({ children }) => {
         error,
         lastUpdated,
 
+        // 모드 변경 알림 (UI에서 토스트로 표시)
+        modeChangeNotification,
+
+        // 네트워크 상태
+        isNetworkOnline,
+
         // 설정
         settings,
         isOffline: settings.dataMode === 'offline',
@@ -198,7 +282,7 @@ export const DataProvider = ({ children }) => {
         setApiKey,
         toggleAutoRefresh,
         testApiConnection,
-    }), [data, isLoading, error, lastUpdated, settings, loadData, updateSettings, setDataMode, setApiKey, toggleAutoRefresh, testApiConnection]);
+    }), [data, isLoading, error, lastUpdated, modeChangeNotification, isNetworkOnline, settings, loadData, updateSettings, setDataMode, setApiKey, toggleAutoRefresh, testApiConnection]);
 
     return (
         <DataContext.Provider value={value}>

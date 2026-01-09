@@ -9,6 +9,102 @@ import logger from '../utils/logger';
 
 // API 기본 URL (프록시 경유)
 const API_BASE = '/api';
+const API_TIMEOUT = 15000; // 15초 타임아웃
+
+// ===== 커스텀 에러 클래스들 =====
+
+/**
+ * API 타임아웃 에러
+ */
+export class TimeoutError extends Error {
+    constructor(message = 'API 요청 시간이 초과되었습니다. 네트워크 상태를 확인해주세요.') {
+        super(message);
+        this.name = 'TimeoutError';
+    }
+}
+
+/**
+ * 네트워크 에러 (연결 실패)
+ */
+export class NetworkError extends Error {
+    constructor(message = '네트워크 연결에 실패했습니다. 인터넷 연결을 확인해주세요.') {
+        super(message);
+        this.name = 'NetworkError';
+    }
+}
+
+/**
+ * API 응답 에러 (서버 오류)
+ */
+export class APIError extends Error {
+    constructor(status, message) {
+        super(message || `서버 오류가 발생했습니다. (상태 코드: ${status})`);
+        this.name = 'APIError';
+        this.status = status;
+    }
+
+    /**
+     * 상태 코드에 따른 사용자 친화적 메시지 생성
+     */
+    static fromStatus(status, serviceName = 'API') {
+        let message;
+        if (status === 400) {
+            message = `${serviceName} 요청이 잘못되었습니다. 입력값을 확인해주세요.`;
+        } else if (status === 401 || status === 403) {
+            message = `${serviceName} 인증에 실패했습니다. API 키를 확인해주세요.`;
+        } else if (status === 404) {
+            message = `${serviceName} 리소스를 찾을 수 없습니다.`;
+        } else if (status === 429) {
+            message = `${serviceName} 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.`;
+        } else if (status >= 500) {
+            message = `${serviceName} 서버에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.`;
+        } else {
+            message = `${serviceName} 오류가 발생했습니다. (상태 코드: ${status})`;
+        }
+        return new APIError(status, message);
+    }
+}
+
+/**
+ * 현재 날짜 기반 동적 날짜 계산
+ */
+const getDateRanges = () => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+    return {
+        startDate: '200001',
+        endDate: `${currentYear}${currentMonth}`,
+    };
+};
+
+/**
+ * 타임아웃이 있는 fetch 래퍼 (에러 타입 구분)
+ */
+const fetchWithTimeout = async (url, options, timeout = API_TIMEOUT) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal,
+        });
+        return response;
+    } catch (error) {
+        // 에러 타입에 따라 적절한 커스텀 에러로 변환
+        if (error.name === 'AbortError') {
+            throw new TimeoutError();
+        }
+        // TypeError는 일반적으로 네트워크 연결 실패를 나타냄
+        if (error.name === 'TypeError' || error.message.includes('fetch')) {
+            throw new NetworkError();
+        }
+        throw error;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+};
 
 /**
  * KOSIS (국가통계포털) API
@@ -31,16 +127,17 @@ export const fetchKOSISData = async (apiKey, dataType) => {
     const orgId = 'KOSIS';
     const tblId = endpoints[dataType] || endpoints.hpi;
 
+    const dateRange = getDateRanges();
     try {
-        const response = await fetch(`${API_BASE}/kosis`, {
+        const response = await fetchWithTimeout(`${API_BASE}/kosis`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 apiKey,
                 orgId,
                 tblId,
-                startPrdDe: '200001',
-                endPrdDe: '202512',
+                startPrdDe: dateRange.startDate,
+                endPrdDe: dateRange.endDate,
                 format: 'json',
             }),
         });
@@ -52,7 +149,11 @@ export const fetchKOSISData = async (apiKey, dataType) => {
         const data = await response.json();
         return transformKOSISData(data, dataType);
     } catch (error) {
-        logger.error('KOSIS API Error:', error);
+        if (error.name === 'AbortError') {
+            logger.error('KOSIS API 타임아웃');
+        } else {
+            logger.error('KOSIS API Error:', error);
+        }
         // 폴백: 데모 데이터 반환
         const demoData = getDemoData();
         return dataType === 'hpi' ? demoData.hpi : demoData.macro;
@@ -79,15 +180,16 @@ export const fetchBOKData = async (apiKey, dataType) => {
 
     const statCode = statCodes[dataType] || statCodes.interest;
 
+    const dateRange = getDateRanges();
     try {
-        const response = await fetch(`${API_BASE}/bok`, {
+        const response = await fetchWithTimeout(`${API_BASE}/bok`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 apiKey,
                 statCode,
-                startDate: '200001',
-                endDate: '202512',
+                startDate: dateRange.startDate,
+                endDate: dateRange.endDate,
                 cycle: 'M', // Monthly
             }),
         });
@@ -99,7 +201,11 @@ export const fetchBOKData = async (apiKey, dataType) => {
         const data = await response.json();
         return transformBOKData(data, dataType);
     } catch (error) {
-        logger.error('BOK ECOS API Error:', error);
+        if (error.name === 'AbortError') {
+            logger.error('BOK API 타임아웃');
+        } else {
+            logger.error('BOK ECOS API Error:', error);
+        }
         // 폴백: 데모 데이터 반환
         return getDemoData().macro;
     }
@@ -123,7 +229,7 @@ export const fetchREBData = async (apiKey, dataType) => {
     };
 
     try {
-        const response = await fetch(`${API_BASE}/reb`, {
+        const response = await fetchWithTimeout(`${API_BASE}/reb`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -139,7 +245,11 @@ export const fetchREBData = async (apiKey, dataType) => {
         const data = await response.json();
         return transformREBData(data, dataType);
     } catch (error) {
-        logger.error('REB API Error:', error);
+        if (error.name === 'AbortError') {
+            logger.error('REB API 타임아웃');
+        } else {
+            logger.error('REB API Error:', error);
+        }
         // 폴백: 데모 데이터 반환
         return getDemoData().regional;
     }
@@ -159,7 +269,7 @@ export const fetchMOLITData = async (apiKey, params) => {
     const { regionCode, dealYmd } = params;
 
     try {
-        const response = await fetch(`${API_BASE}/molit`, {
+        const response = await fetchWithTimeout(`${API_BASE}/molit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -176,7 +286,11 @@ export const fetchMOLITData = async (apiKey, params) => {
         const data = await response.json();
         return transformMOLITData(data);
     } catch (error) {
-        logger.error('MOLIT API Error:', error);
+        if (error.name === 'AbortError') {
+            logger.error('MOLIT API 타임아웃');
+        } else {
+            logger.error('MOLIT API Error:', error);
+        }
         // 폴백: 샘플 데이터 반환
         return generateSampleTransactions();
     }

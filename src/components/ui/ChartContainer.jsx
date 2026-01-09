@@ -1,5 +1,6 @@
 import { memo, useState, useCallback } from 'react';
 import { Download, Maximize2, Minimize2, X, MoreVertical, RefreshCw } from 'lucide-react';
+import logger from '../../utils/logger';
 
 /**
  * 차트 컨테이너 컴포넌트 (Enhanced with fullscreen mode)
@@ -35,7 +36,7 @@ const ChartContainer = memo(({
 
     const handleDownload = useCallback(() => {
         // Placeholder for download functionality
-        console.log('Download chart:', title);
+        logger.debug('Download chart:', title);
     }, [title]);
 
     // Fullscreen overlay

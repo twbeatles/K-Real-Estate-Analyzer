@@ -17,19 +17,22 @@ export const useLocalStorage = (key, initialValue) => {
         }
     });
 
-    // 값 저장
+    // 값 저장 (함수형 업데이트 패턴으로 의존성 문제 해결)
     const setValue = useCallback((value) => {
         try {
-            const valueToStore = value instanceof Function ? value(storedValue) : value;
-            setStoredValue(valueToStore);
-            window.localStorage.setItem(key, JSON.stringify(valueToStore));
+            setStoredValue(prevValue => {
+                const valueToStore = value instanceof Function ? value(prevValue) : value;
+                window.localStorage.setItem(key, JSON.stringify(valueToStore));
 
-            // 다른 탭과 동기화를 위해 이벤트 발생
-            window.dispatchEvent(new CustomEvent('localStorageChange', { detail: { key, value: valueToStore } }));
+                // 다른 탭과 동기화를 위해 이벤트 발생
+                window.dispatchEvent(new CustomEvent('localStorageChange', { detail: { key, value: valueToStore } }));
+
+                return valueToStore;
+            });
         } catch (error) {
             logger.error(`Error setting localStorage key "${key}":`, error);
         }
-    }, [key, storedValue]);
+    }, [key]);
 
     // 값 삭제
     const removeValue = useCallback(() => {

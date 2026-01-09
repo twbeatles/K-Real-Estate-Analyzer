@@ -4,8 +4,9 @@
  */
 
 import { isStaticDeployment, DEMO_NEWS } from '../data/staticData';
+import { logger } from '../utils/logger';
 
-// CORS 프록시 목록 (순차적으로 시도)
+// CORS 프록시 목록 (병렬로 시도)
 const CORS_PROXIES = [
     (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
     (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
@@ -33,30 +34,57 @@ const NEWS_SOURCES = {
 };
 
 /**
- * CORS 프록시를 통해 URL fetch
+ * CORS 프록시를 통해 URL fetch (병렬 시도로 개선)
+ * Promise.race로 가장 빠른 성공 응답 사용, 나머지는 취소
  */
 async function fetchWithCorsProxy(url, timeout = 5000) {
-    for (const getProxyUrl of CORS_PROXIES) {
-        try {
-            const proxyUrl = getProxyUrl(url);
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), timeout);
+    // 모든 프록시에 대한 AbortController 생성
+    const controllers = CORS_PROXIES.map(() => new AbortController());
 
-            const response = await fetch(proxyUrl, {
-                signal: controller.signal,
-                headers: { 'Accept': 'application/rss+xml, application/xml, text/xml' }
-            });
-            clearTimeout(timeoutId);
+    // 병렬 요청 생성
+    const fetchPromises = CORS_PROXIES.map((getProxyUrl, index) => {
+        const proxyUrl = getProxyUrl(url);
+        const controller = controllers[index];
 
-            if (response.ok) {
-                return await response.text();
+        return (async () => {
+            try {
+                const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+                const response = await fetch(proxyUrl, {
+                    signal: controller.signal,
+                    headers: { 'Accept': 'application/rss+xml, application/xml, text/xml' }
+                });
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    // 성공 시 다른 요청들 취소
+                    controllers.forEach((ctrl, i) => {
+                        if (i !== index) ctrl.abort();
+                    });
+                    return await response.text();
+                }
+                throw new Error(`Proxy ${index} returned ${response.status}`);
+            } catch (error) {
+                // AbortError는 정상적인 취소이므로 무시
+                if (error.name === 'AbortError') {
+                    throw error; // 취소된 요청은 다시 throw
+                }
+                logger.warn(`프록시 ${index} 실패:`, error.message);
+                throw error;
             }
-        } catch (error) {
-            // 다음 프록시 시도
-            console.warn('프록시 시도 실패, 다음 프록시로 전환:', error.message);
-        }
+        })();
+    });
+
+    // 첫 번째 성공 응답 반환, 모두 실패 시 에러
+    try {
+        // Promise.any: 첫 번째 성공한 Promise 반환
+        const result = await Promise.any(fetchPromises);
+        return result;
+    } catch (aggregateError) {
+        // 모든 프록시 실패
+        logger.error('모든 CORS 프록시 실패');
+        throw new Error('모든 CORS 프록시 실패');
     }
-    throw new Error('모든 CORS 프록시 실패');
 }
 
 /**
@@ -91,7 +119,7 @@ export const fetchRealEstateNews = async (category = 'all') => {
         const xmlText = await response.text();
         return parseRSSFeed(xmlText);
     } catch (error) {
-        console.error('뉴스 로드 실패:', error);
+        logger.error('뉴스 로드 실패:', error);
         // 최종 폴백: 데모 데이터 반환
         return getDemoNewsWithCategory(category);
     }
@@ -118,14 +146,14 @@ function parseRSSFeed(xmlText) {
         // 파싱 오류 체크
         const parseError = xml.querySelector('parsererror');
         if (parseError) {
-            console.error('RSS 파싱 오류:', parseError.textContent);
+            logger.error('RSS 파싱 오류:', parseError.textContent);
             return DEMO_NEWS;
         }
 
         const items = xml.querySelectorAll('item');
 
         if (items.length === 0) {
-            console.warn('RSS 피드에 항목이 없음, 데모 데이터 사용');
+            logger.warn('RSS 피드에 항목이 없음, 데모 데이터 사용');
             return DEMO_NEWS;
         }
 
@@ -164,7 +192,7 @@ function parseRSSFeed(xmlText) {
 
         return news.length > 0 ? news : DEMO_NEWS;
     } catch (error) {
-        console.error('RSS 파싱 실패:', error);
+        logger.error('RSS 파싱 실패:', error);
         return DEMO_NEWS;
     }
 }

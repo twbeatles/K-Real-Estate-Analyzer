@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback, memo } from 'react';
 import {
     LineChart, Line, AreaChart, Area, XAxis, YAxis,
     CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -14,7 +14,7 @@ import { formatNumber, formatCurrency, formatPercent } from '../utils/formatters
  * 투자 시뮬레이터 페이지
  * 부동산 투자 수익률 예측 및 시뮬레이션
  */
-const InvestmentSimulator = () => {
+const InvestmentSimulator = memo(() => {
     // 저장된 시뮬레이션 불러오기
     const [savedSimulations, setSavedSimulations] = useState(() => {
         const saved = localStorage.getItem('investmentSimulations');
@@ -41,10 +41,60 @@ const InvestmentSimulator = () => {
     // 투자 유형
     const [investmentType, setInvestmentType] = useState('rent'); // rent, gap, jeonse
 
-    // 입력 핸들러
-    const handleInputChange = (field, value) => {
+    // 입력 검증 오류 상태
+    const [validationErrors, setValidationErrors] = useState({});
+
+    // 입력 검증 함수
+    const validateInput = useCallback((field, value) => {
+        const errors = {};
+
+        // 음수 불가 필드
+        const nonNegativeFields = ['purchasePrice', 'depositPercent', 'monthlyRent', 'deposit',
+            'maintenanceCost', 'propertyTax', 'holdingPeriod', 'vacancyRate', 'loanTerm'];
+
+        if (nonNegativeFields.includes(field) && value < 0) {
+            errors[field] = '음수를 입력할 수 없습니다.';
+        }
+
+        // 특정 필드 범위 검증
+        if (field === 'purchasePrice' && value > 10000000) {
+            errors[field] = '매매가가 너무 큽니다. (1000억원 이하)';
+        }
+        if (field === 'depositPercent' && (value < 0 || value > 100)) {
+            errors[field] = '자기자본 비율은 0~100% 사이여야 합니다.';
+        }
+        if (field === 'loanRate' && (value < 0 || value > 30)) {
+            errors[field] = '대출금리는 0~30% 사이여야 합니다.';
+        }
+        if (field === 'holdingPeriod' && (value < 1 || value > 50)) {
+            errors[field] = '보유기간은 1~50년 사이여야 합니다.';
+        }
+        if (field === 'vacancyRate' && (value < 0 || value > 100)) {
+            errors[field] = '공실률은 0~100% 사이여야 합니다.';
+        }
+        if (field === 'loanTerm' && (value < 1 || value > 50)) {
+            errors[field] = '대출기간은 1~50년 사이여야 합니다.';
+        }
+
+        return errors;
+    }, []);
+
+    // 입력 핸들러 (검증 포함)
+    const handleInputChange = useCallback((field, value) => {
+        const errors = validateInput(field, value);
+
+        setValidationErrors(prev => {
+            const updated = { ...prev };
+            if (Object.keys(errors).length > 0) {
+                updated[field] = errors[field];
+            } else {
+                delete updated[field];
+            }
+            return updated;
+        });
+
         setInputs(prev => ({ ...prev, [field]: value }));
-    };
+    }, [validateInput]);
 
     // 시뮬레이션 계산
     const simulation = useMemo(() => {
@@ -263,110 +313,132 @@ const InvestmentSimulator = () => {
                     <div className="card" style={{ marginBottom: 16 }}>
                         <h3 style={{ fontSize: '0.95rem', fontWeight: 600, marginBottom: 16 }}>매물 정보</h3>
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.8rem', marginBottom: 6, color: 'var(--color-text-secondary)' }}>
-                                    매매가 (만원)
-                                </label>
-                                <input
-                                    type="number"
-                                    value={inputs.purchasePrice}
-                                    onChange={(e) => handleInputChange('purchasePrice', Number(e.target.value))}
-                                    className="input"
-                                />
-                            </div>
-
-                            {investmentType === 'rent' && (
-                                <>
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '0.8rem', marginBottom: 6, color: 'var(--color-text-secondary)' }}>
-                                            월세 (만원)
-                                        </label>
-                                        <input
-                                            type="number"
-                                            value={inputs.monthlyRent}
-                                            onChange={(e) => handleInputChange('monthlyRent', Number(e.target.value))}
-                                            className="input"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '0.8rem', marginBottom: 6, color: 'var(--color-text-secondary)' }}>
-                                            보증금 (만원)
-                                        </label>
-                                        <input
-                                            type="number"
-                                            value={inputs.deposit}
-                                            onChange={(e) => handleInputChange('deposit', Number(e.target.value))}
-                                            className="input"
-                                        />
-                                    </div>
-                                </>
+                        <div className="form-group">
+                            <label htmlFor="purchasePrice">
+                                매매가 <span className="unit">(만원)</span>
+                            </label>
+                            <input
+                                id="purchasePrice"
+                                type="number"
+                                value={inputs.purchasePrice}
+                                onChange={(e) => handleInputChange('purchasePrice', Number(e.target.value))}
+                                placeholder="예: 100000"
+                                style={validationErrors.purchasePrice ? { borderColor: 'var(--color-danger)' } : {}}
+                            />
+                            {validationErrors.purchasePrice && (
+                                <span style={{ color: 'var(--color-danger)', fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
+                                    {validationErrors.purchasePrice}
+                                </span>
                             )}
+                        </div>
 
-                            {investmentType === 'gap' && (
-                                <div>
-                                    <label style={{ display: 'block', fontSize: '0.8rem', marginBottom: 6, color: 'var(--color-text-secondary)' }}>
-                                        전세가 (만원)
+                        {investmentType === 'rent' && (
+                            <>
+                                <div className="form-group">
+                                    <label htmlFor="monthlyRent">
+                                        월세 <span className="unit">(만원)</span>
                                     </label>
                                     <input
+                                        id="monthlyRent"
+                                        type="number"
+                                        value={inputs.monthlyRent}
+                                        onChange={(e) => handleInputChange('monthlyRent', Number(e.target.value))}
+                                        placeholder="예: 150"
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label htmlFor="deposit">
+                                        보증금 <span className="unit">(만원)</span>
+                                    </label>
+                                    <input
+                                        id="deposit"
                                         type="number"
                                         value={inputs.deposit}
                                         onChange={(e) => handleInputChange('deposit', Number(e.target.value))}
-                                        className="input"
+                                        placeholder="예: 10000"
                                     />
                                 </div>
-                            )}
-                        </div>
+                            </>
+                        )}
+
+                        {investmentType === 'gap' && (
+                            <div className="form-group">
+                                <label htmlFor="jeonsePrice">
+                                    전세가 <span className="unit">(만원)</span>
+                                </label>
+                                <input
+                                    id="jeonsePrice"
+                                    type="number"
+                                    value={inputs.deposit}
+                                    onChange={(e) => handleInputChange('deposit', Number(e.target.value))}
+                                    placeholder="예: 80000"
+                                />
+                            </div>
+                        )}
                     </div>
 
                     {/* Financing */}
                     <div className="card" style={{ marginBottom: 16 }}>
                         <h3 style={{ fontSize: '0.95rem', fontWeight: 600, marginBottom: 16 }}>자금 계획</h3>
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.8rem', marginBottom: 6, color: 'var(--color-text-secondary)' }}>
-                                    자기자본 비율 (%) - 현재: {formatCurrency(simulation.equityAmount)}
-                                </label>
-                                <input
-                                    type="range"
-                                    min="10"
-                                    max="100"
-                                    value={inputs.depositPercent}
-                                    onChange={(e) => handleInputChange('depositPercent', Number(e.target.value))}
-                                    style={{ width: '100%' }}
-                                />
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--color-text-tertiary)' }}>
-                                    <span>10%</span>
-                                    <span style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{inputs.depositPercent}%</span>
-                                    <span>100%</span>
-                                </div>
+                        <div className="form-group">
+                            <label htmlFor="depositPercent">
+                                자기자본 비율 <span className="unit">({inputs.depositPercent}%)</span>
+                                <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: 'var(--color-primary)', fontWeight: 600 }}>
+                                    {formatCurrency(simulation.equityAmount)}
+                                </span>
+                            </label>
+                            <input
+                                id="depositPercent"
+                                type="range"
+                                min="10"
+                                max="100"
+                                value={inputs.depositPercent}
+                                onChange={(e) => handleInputChange('depositPercent', Number(e.target.value))}
+                            />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--color-text-tertiary)', marginTop: '4px' }}>
+                                <span>10%</span>
+                                <span>100%</span>
                             </div>
+                        </div>
 
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.8rem', marginBottom: 6, color: 'var(--color-text-secondary)' }}>
-                                    대출금리 (%)
-                                </label>
-                                <input
-                                    type="number"
-                                    step="0.1"
-                                    value={inputs.loanRate}
-                                    onChange={(e) => handleInputChange('loanRate', Number(e.target.value))}
-                                    className="input"
-                                />
-                            </div>
+                        <div className="form-group">
+                            <label htmlFor="loanRate">
+                                대출금리 <span className="unit">(%)</span>
+                            </label>
+                            <input
+                                id="loanRate"
+                                type="number"
+                                step="0.1"
+                                value={inputs.loanRate}
+                                onChange={(e) => handleInputChange('loanRate', Number(e.target.value))}
+                                placeholder="예: 4.5"
+                                style={validationErrors.loanRate ? { borderColor: 'var(--color-danger)' } : {}}
+                            />
+                            {validationErrors.loanRate && (
+                                <span style={{ color: 'var(--color-danger)', fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
+                                    {validationErrors.loanRate}
+                                </span>
+                            )}
+                        </div>
 
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.8rem', marginBottom: 6, color: 'var(--color-text-secondary)' }}>
-                                    대출기간 (년)
-                                </label>
-                                <input
-                                    type="number"
-                                    value={inputs.loanTerm}
-                                    onChange={(e) => handleInputChange('loanTerm', Number(e.target.value))}
-                                    className="input"
-                                />
-                            </div>
+                        <div className="form-group">
+                            <label htmlFor="loanTerm">
+                                대출기간 <span className="unit">(년)</span>
+                            </label>
+                            <input
+                                id="loanTerm"
+                                type="number"
+                                value={inputs.loanTerm}
+                                onChange={(e) => handleInputChange('loanTerm', Number(e.target.value))}
+                                placeholder="예: 30"
+                                style={validationErrors.loanTerm ? { borderColor: 'var(--color-danger)' } : {}}
+                            />
+                            {validationErrors.loanTerm && (
+                                <span style={{ color: 'var(--color-danger)', fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
+                                    {validationErrors.loanTerm}
+                                </span>
+                            )}
                         </div>
                     </div>
 
@@ -374,43 +446,78 @@ const InvestmentSimulator = () => {
                     <div className="card">
                         <h3 style={{ fontSize: '0.95rem', fontWeight: 600, marginBottom: 16 }}>시세 전망</h3>
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.8rem', marginBottom: 6, color: 'var(--color-text-secondary)' }}>
-                                    연평균 시세상승률 (%)
-                                </label>
-                                <input
-                                    type="number"
-                                    step="0.5"
-                                    value={inputs.expectedAppreciation}
-                                    onChange={(e) => handleInputChange('expectedAppreciation', Number(e.target.value))}
-                                    className="input"
-                                />
-                            </div>
+                        <div className="form-group">
+                            <label htmlFor="expectedAppreciation">
+                                연평균 시세상승률 <span className="unit">(%)</span>
+                                <span
+                                    className="tooltip-help"
+                                    data-tooltip="과거 10년 수도권 평균: 약 3~5%"
+                                    style={{ marginLeft: 6 }}
+                                >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <circle cx="12" cy="12" r="10" />
+                                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                                        <line x1="12" y1="17" x2="12.01" y2="17" />
+                                    </svg>
+                                </span>
+                            </label>
+                            <input
+                                id="expectedAppreciation"
+                                type="number"
+                                step="0.5"
+                                value={inputs.expectedAppreciation}
+                                onChange={(e) => handleInputChange('expectedAppreciation', Number(e.target.value))}
+                                placeholder="예: 3"
+                            />
+                        </div>
 
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.8rem', marginBottom: 6, color: 'var(--color-text-secondary)' }}>
-                                    보유기간 (년)
-                                </label>
-                                <input
-                                    type="number"
-                                    value={inputs.holdingPeriod}
-                                    onChange={(e) => handleInputChange('holdingPeriod', Number(e.target.value))}
-                                    className="input"
-                                />
-                            </div>
+                        <div className="form-group">
+                            <label htmlFor="holdingPeriod">
+                                보유기간 <span className="unit">(년)</span>
+                            </label>
+                            <input
+                                id="holdingPeriod"
+                                type="number"
+                                value={inputs.holdingPeriod}
+                                onChange={(e) => handleInputChange('holdingPeriod', Number(e.target.value))}
+                                placeholder="예: 10"
+                                style={validationErrors.holdingPeriod ? { borderColor: 'var(--color-danger)' } : {}}
+                            />
+                            {validationErrors.holdingPeriod && (
+                                <span style={{ color: 'var(--color-danger)', fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
+                                    {validationErrors.holdingPeriod}
+                                </span>
+                            )}
+                        </div>
 
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.8rem', marginBottom: 6, color: 'var(--color-text-secondary)' }}>
-                                    예상 공실률 (%)
-                                </label>
-                                <input
-                                    type="number"
-                                    value={inputs.vacancyRate}
-                                    onChange={(e) => handleInputChange('vacancyRate', Number(e.target.value))}
-                                    className="input"
-                                />
-                            </div>
+                        <div className="form-group">
+                            <label htmlFor="vacancyRate">
+                                예상 공실률 <span className="unit">(%)</span>
+                                <span
+                                    className="tooltip-help"
+                                    data-tooltip="일반적으로 5~10% 정도를 예상합니다"
+                                    style={{ marginLeft: 6 }}
+                                >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <circle cx="12" cy="12" r="10" />
+                                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                                        <line x1="12" y1="17" x2="12.01" y2="17" />
+                                    </svg>
+                                </span>
+                            </label>
+                            <input
+                                id="vacancyRate"
+                                type="number"
+                                value={inputs.vacancyRate}
+                                onChange={(e) => handleInputChange('vacancyRate', Number(e.target.value))}
+                                placeholder="예: 5"
+                                style={validationErrors.vacancyRate ? { borderColor: 'var(--color-danger)' } : {}}
+                            />
+                            {validationErrors.vacancyRate && (
+                                <span style={{ color: 'var(--color-danger)', fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
+                                    {validationErrors.vacancyRate}
+                                </span>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -629,6 +736,8 @@ const InvestmentSimulator = () => {
             </div>
         </div>
     );
-};
+});
+
+InvestmentSimulator.displayName = 'InvestmentSimulator';
 
 export default InvestmentSimulator;
