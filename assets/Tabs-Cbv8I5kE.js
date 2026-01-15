@@ -1,0 +1,2 @@
+import{j as t,J as l}from"./index-Bj6dzIfW.js";const u=({tabs:r,activeTab:s,onChange:i,className:o=""})=>t.jsx("div",{className:`tabs ${o}`,children:r.map(n=>{const e=n.icon,c=()=>e?l.isValidElement(e)?e:typeof e=="function"||typeof e=="object"&&e.$$typeof?t.jsx(e,{size:16,style:{marginRight:6}}):null:null;return t.jsxs("button",{className:`tab ${s===n.id?"tab-active":""}`,onClick:()=>i(n.id),children:[c(),n.label]},n.id)})});export{u as T};
+//# sourceMappingURL=Tabs-Cbv8I5kE.js.map
