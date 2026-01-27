@@ -1,0 +1,2 @@
+import{g as a,B as s,X as i,Y as r,f as o}from"./generateCategoricalChart-DhUO3NK-.js";import{A as m}from"./Area-D0doveRy.js";import{L as p}from"./Line-DzNzCnQO.js";import{S as x,Z as t}from"./Scatter-DoFNjQls.js";var h=a({chartName:"ComposedChart",GraphicalChild:[p,m,s,x],axisComponents:[{axisType:"xAxis",AxisComp:i},{axisType:"yAxis",AxisComp:r},{axisType:"zAxis",AxisComp:t}],formatAxisMap:o});export{h as C};
+//# sourceMappingURL=ComposedChart-CW1QJql1.js.map
